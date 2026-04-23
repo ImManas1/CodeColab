@@ -1,33 +1,73 @@
 import MonacoEditor from "@monaco-editor/react";
-import { useRoom } from '../context/RoomContext';
+import { useRoom } from "../context/RoomContext";
+import { socket } from "../socket/socket";
+import { useEffect } from "react";
 
 export default function Editor() {
-  const { files, setFiles, activeFileId, isTeachingMode, isHost } = useRoom();
+  const {
+    files,
+    setFiles,
+    activeFileId,
+    isTeachingMode,
+    isHost,
+    userId,       // Fix #5: now correctly provided by context
+    getLanguage,
+  } = useRoom();
+
   const activeFile = files.find(f => f.id === activeFileId);
 
-  const getLanguage = (filename) => {
-    if (!filename) return 'plaintext';
-    if (filename.endsWith('.py')) return 'python';
-    if (filename.endsWith('.js')) return 'javascript';
-    if (filename.endsWith('.c') || filename.endsWith('.cpp')) return 'cpp';
-    if (filename.endsWith('.html')) return 'html';
-    if (filename.endsWith('.css')) return 'css';
-    if (filename.endsWith('.json')) return 'json';
-    return 'plaintext';
+  // SEND CODE
+  const handleEditorChange = (value) => {
+    const updatedContent = value || "";
+
+    setFiles(prev =>
+      prev.map(f =>
+        String(f.id) === String(activeFileId)
+          ? { ...f, content: updatedContent }
+          : f
+      )
+    );
+
+    socket.emit("code_change", {
+      userId,
+      fileId: String(activeFileId),
+      code: updatedContent,
+    });
   };
 
-  const handleEditorChange = (value) => {
-    setFiles(files.map(f => f.id === activeFileId ? { ...f, content: value || "" } : f));
-  };
+  // RECEIVE CODE
+  useEffect(() => {
+    const handleIncomingCode = ({ fileId, code }) => {
+      setFiles(prev =>
+        prev.map(f => {
+          if (String(f.id) !== String(fileId)) return f;
+          if (f.content === code) return f; // prevent infinite loop
+          return { ...f, content: code };
+        })
+      );
+    };
+
+    socket.on("code_update", handleIncomingCode);
+
+    // Fix #6: Only remove THIS specific listener, not all socket listeners
+    return () => {
+      socket.off("code_update", handleIncomingCode);
+    };
+  }, [setFiles]);
 
   return (
     <section className="editor-container">
-      <div className="panel-header" style={{ justifyContent: 'space-between' }}>
-        <div className="file-tab">{activeFile?.name || "No file selected"}</div>
+      <div className="panel-header" style={{ justifyContent: "space-between" }}>
+        <div className="file-tab">
+          {activeFile?.name || "No file selected"}
+        </div>
         {activeFile && (
-          <div className="lang-badge">{getLanguage(activeFile.name)}</div>
+          <div className="lang-badge">
+            {getLanguage(activeFile.name)}
+          </div>
         )}
       </div>
+
       <div className="editor-wrapper">
         <MonacoEditor
           height="100%"
@@ -45,7 +85,7 @@ export default function Editor() {
             scrollBeyondLastLine: false,
             smoothScrolling: true,
             cursorBlinking: "smooth",
-            renderLineHighlight: "all"
+            renderLineHighlight: "all",
           }}
         />
       </div>

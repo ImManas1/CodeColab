@@ -6,9 +6,11 @@ export default function FileExplorer({ isVisible, toggleVisibility }) {
   const addNewFile = () => {
     const name = prompt("Enter new file name (e.g., script.py):");
     if (name) {
-      const newFile = { id: Date.now(), name, content: "" };
-      setFiles([...files, newFile]);
+      const newFile = { id: Date.now().toString(), name, content: "" };
+      const newFiles = [...files, newFile];
+      setFiles(newFiles);
       setActiveFileId(newFile.id);
+      socket.emit("sync_files", { files: newFiles });
     }
   };
 
@@ -20,6 +22,7 @@ export default function FileExplorer({ isVisible, toggleVisibility }) {
       if (activeFileId === id) {
         setActiveFileId(newFiles.length > 0 ? newFiles[0].id : null);
       }
+      socket.emit("sync_files", { files: newFiles });
     }
   };
 
@@ -36,11 +39,13 @@ export default function FileExplorer({ isVisible, toggleVisibility }) {
           const exists = prev.find(f => f.name === fileName);
           if (exists) return prev;
           
-          return [...prev, {
-            id: Date.now() + Math.random(),
+          const newFiles = [...prev, {
+            id: (Date.now() + Math.random()).toString(),
             name: fileName,
             content
           }];
+          socket.emit("sync_files", { files: newFiles });
+          return newFiles;
         });
       };
       // For images/binary, this would corrupt, but for text files it's fine.
