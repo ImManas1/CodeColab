@@ -85,7 +85,7 @@ export default function UserList() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <span style={{ fontSize: '13px', color: 'var(--text-main)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                  {u.userId === userId ? 'You' : u.userId}
+                  {u.userId}{u.userId === userId ? ' (You)' : ''}
                 </span>
                 {u.isHost && (
                   <span style={{ fontSize: '10px', color: 'var(--brand-color)', fontWeight: 600 }}>HOST</span>

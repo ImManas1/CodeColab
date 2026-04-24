@@ -55,7 +55,7 @@ export default function Chat() {
           <div key={i} className="chat-msg">
             <div className="chat-msg-dot" style={{ background: getAvatarColor(m.userId) }}></div>
             <div className="chat-msg-content">
-              <span className="chat-msg-name">{m.userId === userId ? 'You' : m.userId}</span>
+              <span className="chat-msg-name">{m.userId}{m.userId === userId ? ' (You)' : ''}</span>
               {m.message}
             </div>
             {m.time && <div className="chat-msg-time">{m.time}</div>}

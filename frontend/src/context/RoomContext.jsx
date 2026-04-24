@@ -85,15 +85,12 @@ export const RoomProvider = ({ children }) => {
     
     // Initialize default files if empty on sync
     provider.on('synced', () => {
+      // We check if the doc is empty. 
+      // To avoid race conditions, we can also check if we are the host.
+      // However, room_state might not have arrived yet.
+      // Yjs usually handles concurrent insertions, but we want to minimize them.
       if (yFiles.length === 0) {
-        ydoc.transact(() => {
-          yFiles.insert(0, [
-            { id: '1', name: 'main.py' },
-            { id: '2', name: 'index.js' }
-          ]);
-          ydoc.getText('1').insert(0, 'print("Hello Python!")\n');
-          ydoc.getText('2').insert(0, 'console.log("Hello JS");\n');
-        });
+        console.log('[Yjs] Document empty, waiting for host status to initialize...');
       }
       updateFilesState();
     });
@@ -104,6 +101,34 @@ export const RoomProvider = ({ children }) => {
       setWsProvider(null);
     };
   }, [roomId, ydoc, setFilesAndRef]);
+
+  // Handle initialization once both synced and host status are known
+  useEffect(() => {
+    if (!wsProvider || !isHost) return;
+
+    const yFiles = ydoc.getArray('files');
+    
+    // Only initialize if synced and still empty
+    const initIfEmpty = () => {
+      if (yFiles.length === 0) {
+        console.log('[Yjs] Initializing default files as host');
+        ydoc.transact(() => {
+          yFiles.insert(0, [
+            { id: '1', name: 'main.py' },
+            { id: '2', name: 'index.js' }
+          ]);
+          ydoc.getText('1').insert(0, 'print("Hello Python!")\n');
+          ydoc.getText('2').insert(0, 'console.log("Hello JS");\n');
+        });
+      }
+    };
+
+    if (wsProvider.synced) {
+      initIfEmpty();
+    } else {
+      wsProvider.once('synced', initIfEmpty);
+    }
+  }, [wsProvider, isHost, ydoc]);
 
   const runCode = useCallback(async () => {
     const activeFile = filesRef.current.find(f => f.id === activeFileIdRef.current);
