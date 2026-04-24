@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useRoom } from '../context/RoomContext';
+import { socket } from '../socket/socket';
 
 export default function Navbar({ connectionStatus }) {
   const {
@@ -10,151 +11,94 @@ export default function Navbar({ connectionStatus }) {
   } = useRoom();
 
   const navigate = useNavigate();
+  const [users, setUsers] = useState([]);
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const handleRoomState = ({ users: userList }) => setUsers(userList);
+    const handleUserListUpdate = (userList) => setUsers(userList);
+    
+    socket.on('room_state', handleRoomState);
+    socket.on('user_list_update', handleUserListUpdate);
+
+    return () => {
+      socket.off('room_state', handleRoomState);
+      socket.off('user_list_update', handleUserListUpdate);
+    };
+  }, []);
 
   const handleCopyRoomId = () => {
     if (!roomId) return;
-    navigator.clipboard.writeText(roomId).then(() => {
+    const fullLink = `${window.location.origin}/room/${roomId}`;
+    navigator.clipboard.writeText(fullLink).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
   };
 
-  const statusColor = {
-    connected: 'var(--success)',
-    disconnected: 'var(--error)',
-    connecting: 'var(--warning)',
-    error: 'var(--error)',
-  }[connectionStatus] ?? 'var(--text-muted)';
+  const getAvatarColor = (name) => {
+    const safeName = name || "User";
+    let hash = 0;
+    for (let i = 0; i < safeName.length; i++) {
+      hash = safeName.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const hue = hash % 360;
+    return `hsl(${hue}, 70%, 40%)`;
+  };
 
   return (
     <header className="app-header">
       <div className="brand">
         <div className="brand-icon">{'</>'}</div>
         <div className="brand-name">CodeColab</div>
+        <div className="connection-dot" title={`Socket: ${connectionStatus}`} />
+      </div>
 
-        {/* Connection status dot */}
-        <div
-          title={`Socket: ${connectionStatus}`}
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: '50%',
-            background: statusColor,
-            boxShadow: `0 0 6px ${statusColor}`,
-            marginLeft: 4,
-          }}
-        />
+      <div className="header-center">
+        {roomId && (
+          <div className="room-info">
+            <span>Room: {roomId}</span>
+          </div>
+        )}
+        
       </div>
 
       <div className="header-actions">
-
-        {/* User identity chip */}
-        {userId && (
-          <div style={{
-            fontSize: '12px',
-            fontFamily: 'var(--font-mono)',
-            color: 'var(--text-muted)',
-            padding: '4px 10px',
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid var(--border-glass)',
-            borderRadius: 6,
-          }}>
-            @{userId}
-          </div>
-        )}
-
-        {/* Room share badge */}
-        {roomId && (
-          <button
-            className="room-share-btn"
-            onClick={handleCopyRoomId}
-            title="Click to copy room code"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M17 7H13V9H17C18.65 9 20 10.35 20 12C20 13.65 18.65 15 17 15H13V17H17C19.76 17 22 14.76 22 12C22 9.24 19.76 7 17 7ZM11 15H7C5.35 15 4 13.65 4 12C4 10.35 5.35 9 7 9H11V7H7C4.24 7 2 9.24 2 12C2 14.76 4.24 17 7 17H11V15ZM8 11H16V13H8V11Z" />
-            </svg>
-            <span className="room-id-code">{roomId}</span>
-            <span className="copy-label">{copied ? '✓ Copied!' : 'Copy'}</span>
-          </button>
-        )}
-
-        {/* Teaching mode indicator (for guests) */}
-        {isTeachingMode && !isHost && (
-          <div className="teaching-indicator">
-            <span className="pulse-dot"></span>
-            Observing Host
-          </div>
-        )}
-
-        {/* Teaching mode toggle (host only) */}
         {isHost && (
           <button
-            className={`teaching-btn ${isTeachingMode ? 'active' : ''}`}
+            className="btn-outline"
+            style={{ borderColor: isTeachingMode ? 'var(--warning)' : 'var(--border-color)', color: isTeachingMode ? 'var(--warning)' : 'var(--text-muted)' }}
             onClick={() => setIsTeachingMode(!isTeachingMode)}
           >
             {isTeachingMode ? '🛑 End Teaching' : '🎓 Teach'}
           </button>
         )}
 
-        {/* Run Code */}
-        <button
-          className="run-btn"
-          onClick={runCode}
-          disabled={isRunning}
-        >
-          {isRunning ? (
-            <>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" strokeDasharray="30" strokeLinecap="round">
-                  <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite" />
-                </circle>
-              </svg>
-              Running...
-            </>
+        <button className="btn-outline" onClick={handleCopyRoomId} style={{ width: '85px', justifyContent: 'center' }}>
+          {copied ? (
+            <span style={{ color: 'var(--success)' }}>Copied!</span>
           ) : (
             <>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M8 5v14l11-7z" />
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/>
               </svg>
-              Run Code
+              Share
             </>
           )}
         </button>
 
-        {/* Leave Session */}
-        <button
-          className="leave-btn"
-          onClick={() => navigate('/')}
-          title="Leave Session"
-          style={{
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            color: '#f87171',
-            borderRadius: '6px',
-            padding: '6px 12px',
-            fontFamily: 'var(--font-sans)',
-            fontSize: '12px',
-            fontWeight: '600',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)';
-            e.currentTarget.style.color = '#fca5a5';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
-            e.currentTarget.style.color = '#f87171';
-          }}
-        >
+        <button className="btn-primary" onClick={runCode} disabled={isRunning}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+          {isRunning ? "Running..." : "Run Code"}
+        </button>
+
+        <button className="btn-danger-outline" onClick={() => navigate('/')}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
             <path d="M10.09 15.59L11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67l-2.58 2.59zM19 3H5c-1.11 0-2 .9-2 2v4h2V5h14v14H5v-4H3v4c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
           </svg>
-          Leave
+          Leave Room
         </button>
       </div>
     </header>

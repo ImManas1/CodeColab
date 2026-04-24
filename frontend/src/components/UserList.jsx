@@ -3,25 +3,20 @@ import { socket } from '../socket/socket';
 import { useRoom } from '../context/RoomContext';
 
 export default function UserList() {
-  const { userId, roomId } = useRoom();
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const { userId } = useRoom();
   const [users, setUsers] = useState([]);
   const [hostId, setHostId] = useState(null);
 
-  // Receive real user list from backend on join and on changes
   useEffect(() => {
-    // room_state fires once when we first join — gives us the full snapshot
     const handleRoomState = ({ users: userList, hostId: hId }) => {
-      setUsers(userList);
+      setUsers(userList || []);
       setHostId(hId);
     };
 
-    // user_list_update fires whenever anyone joins or leaves
     const handleUserListUpdate = (userList) => {
-      setUsers(userList);
+      setUsers(userList || []);
     };
 
-    // host_changed fires when host transfers or disconnects
     const handleHostChanged = ({ hostId: hId }) => {
       setHostId(hId);
       setUsers(prev => prev.map(u => ({ ...u, isHost: u.userId === hId })));
@@ -38,82 +33,68 @@ export default function UserList() {
     };
   }, []);
 
-  return (
-    <div className="user-list-panel">
-      <div
-        className="panel-title"
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          cursor: 'pointer',
-          marginBottom: isCollapsed ? '0' : '12px',
-        }}
-        onClick={() => setIsCollapsed(!isCollapsed)}
-      >
-        <span>Online Users ({users.length})</span>
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="currentColor"
-          style={{
-            transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
-            transition: 'transform 0.2s ease',
-          }}
-        >
-          <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
-        </svg>
-      </div>
+  const getAvatarColor = (name) => {
+    const safeName = name || "User";
+    let hash = 0;
+    for (let i = 0; i < safeName.length; i++) {
+      hash = safeName.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const hue = hash % 360;
+    return `hsl(${hue}, 70%, 50%)`;
+  };
 
-      {!isCollapsed && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {users.length === 0 ? (
-            <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-              No users yet...
-            </div>
-          ) : (
-            users.map((u) => (
-              <div
-                key={u.userId}
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <div className="panel-header">
+        <div className="panel-title">USERS IN ROOM ({users.length})</div>
+      </div>
+      
+      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {users.length === 0 ? (
+          <div style={{ color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center' }}>No users</div>
+        ) : (
+          users.map(u => (
+            <div 
+              key={u.userId}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '6px 8px',
+                borderRadius: '6px',
+                background: u.userId === userId ? 'var(--bg-hover)' : 'transparent',
+                border: u.userId === userId ? '1px solid var(--border-color)' : '1px solid transparent',
+              }}
+            >
+              <div 
                 style={{
+                  width: '24px', 
+                  height: '24px', 
+                  borderRadius: '50%', 
+                  background: getAvatarColor(u.userId),
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '8px',
-                  fontSize: '13px',
-                  color: u.userId === userId ? 'var(--text-accent)' : 'var(--text-main)',
+                  justifyContent: 'center',
+                  fontSize: '10px',
+                  fontWeight: 'bold',
+                  color: 'white',
+                  flexShrink: 0
                 }}
               >
-                <span
-                  style={{
-                    width: '7px',
-                    height: '7px',
-                    borderRadius: '50%',
-                    background: 'var(--success)',
-                    flexShrink: 0,
-                  }}
-                />
-                {u.userId === userId ? 'You' : u.userId}
+                {u.userId.charAt(0).toUpperCase()}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <span style={{ fontSize: '13px', color: 'var(--text-main)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                  {u.userId === userId ? 'You' : u.userId}
+                </span>
                 {u.isHost && (
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      fontWeight: 700,
-                      color: 'var(--warning)',
-                      background: 'rgba(245, 158, 11, 0.1)',
-                      border: '1px solid rgba(245, 158, 11, 0.2)',
-                      padding: '1px 5px',
-                      borderRadius: '3px',
-                    }}
-                  >
-                    HOST
-                  </span>
+                  <span style={{ fontSize: '10px', color: 'var(--brand-color)', fontWeight: 600 }}>HOST</span>
                 )}
               </div>
-            ))
-          )}
-        </div>
-      )}
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }

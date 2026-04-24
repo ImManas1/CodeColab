@@ -7,7 +7,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState("initialize");
   const [developerId, setDeveloperId] = useState("");
   const [roomCode, setRoomCode] = useState("");
-  const [isLoginPanelOpen, setIsLoginPanelOpen] = useState(false);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -31,7 +31,7 @@ export default function Home() {
     // Save the developer's chosen name so Room can use it as the socket identity
     const newUserId = developerId.trim();
     sessionStorage.setItem("cc_user_id", newUserId);
-    setUserId(newUserId); // Fix: Update context state immediately so it's not null
+    setUserId(newUserId);
 
     if (activeTab === "initialize") {
       const roomId = Math.random().toString(36).substring(2, 8);
@@ -49,26 +49,23 @@ export default function Home() {
     navigate(`/room/sample123`);
   };
 
-  return (
-    <div className="home-container">
-      <div className="cyber-bg">
-        <div className="cyber-grid-top"></div>
-        <div className="cyber-grid-bottom"></div>
-        <div className="cyber-glow"></div>
-        <div className="cyber-flare"></div>
-        <div className="cyber-particles">
-          <span className="binary-text b1">0 1 0 1</span>
-          <span className="binary-text b2">0 0 1</span>
-          <span className="binary-text b3">1 0 1 1 0</span>
-          <span className="binary-text b4">0 1</span>
-          <span className="binary-text b5">1 0</span>
-        </div>
-      </div>
+  const handleMouseMove = (e) => {
+    setMousePos({ x: e.clientX, y: e.clientY });
+  };
 
+  return (
+    <div className="home-container" onMouseMove={handleMouseMove}>
+      <div 
+        className="home-spotlight" 
+        style={{ 
+          background: `radial-gradient(800px circle at ${mousePos.x}px ${mousePos.y}px, rgba(99, 102, 241, 0.08), transparent 40%)` 
+        }} 
+      />
       <div className="home-content">
         <div className="home-header">
           <div className="home-brand">
-            <span className="brand-square"></span> CODECOLAB // TERMINAL
+            <span className="brand-square">{'</>'}</span>
+            CODECOLAB // TERMINAL
           </div>
 
           <h1 className="home-title">
@@ -83,75 +80,57 @@ export default function Home() {
           </p>
         </div>
 
-        {!isLoginPanelOpen && (
-          <div className="auth-panel">
-            <div className="auth-tabs">
-              <button
-                className={`auth-tab ${activeTab === "initialize" ? "active" : ""}`}
-                onClick={() => setActiveTab("initialize")}
-              >
-                CREATE ROOM
-              </button>
+        <div className="auth-panel">
+          <div className="auth-tabs">
+            <button
+              className={`auth-tab ${activeTab === "initialize" ? "active" : ""}`}
+              onClick={() => setActiveTab("initialize")}
+            >
+              CREATE ROOM
+            </button>
 
-              <button
-                className={`auth-tab ${activeTab === "attach" ? "active" : ""}`}
-                onClick={() => setActiveTab("attach")}
-              >
-                JOIN ROOM
-              </button>
+            <button
+              className={`auth-tab ${activeTab === "attach" ? "active" : ""}`}
+              onClick={() => setActiveTab("attach")}
+            >
+              JOIN ROOM
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="auth-form">
+            <div className="input-group">
+              <label>DEVELOPER HANDLE</label>
+              <input
+                type="text"
+                placeholder="e.g. dev_ninja"
+                value={developerId}
+                onChange={(e) => setDeveloperId(e.target.value)}
+                autoFocus
+              />
             </div>
 
-            <form onSubmit={handleSubmit} className="auth-form">
+            {activeTab === "attach" && (
               <div className="input-group">
-                <label>USER NAME</label>
+                <label>ROOM ID</label>
                 <input
                   type="text"
-                  placeholder="e.g. user1"
-                  value={developerId}
-                  onChange={(e) => setDeveloperId(e.target.value)}
+                  placeholder="e.g. asqqdm"
+                  value={roomCode}
+                  onChange={(e) => setRoomCode(e.target.value)}
                 />
               </div>
+            )}
 
-              {activeTab === "attach" && (
-                <div className="input-group">
-                  <label>ROOM CODE</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. ab3x9f"
-                    value={roomCode}
-                    onChange={(e) => setRoomCode(e.target.value)}
-                  />
-                </div>
-              )}
+            <button type="submit" className="btn-primary auth-submit">
+              {activeTab === "initialize" ? "Initialize Session" : "Attach to Session"}
+            </button>
+          </form>
 
-              <button type="submit" className="auth-submit">
-                {activeTab === "initialize" ? "Create Session" : "Join Session"}
-              </button>
-            </form>
-
-            <div className="auth-footer" onClick={joinSample}>
-              [ TRY A SAMPLE SESSION ]
-            </div>
+          <div className="auth-footer">
+            <button className="btn-outline" onClick={joinSample} style={{ width: '100%', justifyContent: 'center', marginTop: '16px' }}>
+              Test Drive (Sample Session)
+            </button>
           </div>
-        )}
-      </div>
-
-      <div className={`side-login-panel ${isLoginPanelOpen ? "open" : ""}`}>
-        <button
-          className="side-login-tab"
-          onClick={() => setIsLoginPanelOpen(!isLoginPanelOpen)}
-        >
-          {isLoginPanelOpen ? "CLOSE" : "LOG IN"}
-        </button>
-
-        <div className="side-login-content">
-          <h2 style={{ fontSize: "22px", marginBottom: "32px" }}>
-            Access Account
-          </h2>
-
-          <button className="github-btn">
-            Continue with GitHub
-          </button>
         </div>
       </div>
     </div>

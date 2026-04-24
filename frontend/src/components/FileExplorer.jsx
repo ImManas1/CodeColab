@@ -27,62 +27,65 @@ export default function FileExplorer({ isVisible, toggleVisibility }) {
     }
   };
 
-  const handleFileUpload = (e) => {
+  const handleFileUpload = async (e) => {
     const uploadedFiles = Array.from(e.target.files);
 
-    uploadedFiles.forEach(file => {
+    const readFile = (file) => new Promise((resolve) => {
       const reader = new FileReader();
-      reader.onload = (event) => {
-        const content = event.target.result;
-        setFiles(prev => {
-          // Avoid duplicate files by path/name
-          const fileName = file.webkitRelativePath || file.name;
-          const exists = prev.find(f => f.name === fileName);
-          if (exists) return prev;
-
-          const newFiles = [...prev, {
-            id: (Date.now() + Math.random()).toString(),
-            name: fileName,
-            content
-          }];
-          socket.emit("sync_files", { files: newFiles });
-          return newFiles;
-        });
-      };
-      // For images/binary, this would corrupt, but for text files it's fine.
+      reader.onload = (event) => resolve({
+        name: file.webkitRelativePath || file.name,
+        content: event.target.result
+      });
       reader.readAsText(file);
     });
-    // Clear input so same file can be uploaded again if needed
+
+    const parsedFiles = await Promise.all(uploadedFiles.map(readFile));
+
+    setFiles(prev => {
+      let newFiles = [...prev];
+      let added = false;
+
+      parsedFiles.forEach(pf => {
+        if (!newFiles.find(f => f.name === pf.name)) {
+          newFiles.push({
+            id: (Date.now() + Math.random()).toString(),
+            name: pf.name,
+            content: pf.content
+          });
+          added = true;
+        }
+      });
+
+      if (added) {
+        socket.emit("sync_files", { files: newFiles });
+      }
+      return added ? newFiles : prev;
+    });
+
     e.target.value = null;
   };
 
-  if (!isVisible) {
-    return (
-      <div className="file-explorer-collapsed">
-        <button className="icon-btn" onClick={toggleVisibility} title="Expand Explorer">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z" /></svg>
-        </button>
-      </div>
-    );
-  }
+  if (!isVisible) return null; // handled in Room.jsx sidebar-left wrapper
 
   return (
-    <aside className="file-explorer">
-      <div className="panel-header" style={{ justifyContent: 'space-between', padding: '0 8px' }}>
-        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+    <>
+      <div className="panel-header" style={{ height: '36px', padding: '0 16px', color: 'var(--text-muted)' }}>
+        <span style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '1px' }}>EXPLORER</span>
+      </div>
+
+      <div className="panel-header" style={{ justifyContent: 'space-between', padding: '0 16px' }}>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
           <button className="icon-btn" onClick={toggleVisibility} title="Collapse Explorer">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" /></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" /></svg>
           </button>
-          <div className="panel-title" style={{ fontSize: '12px' }}>Project Files</div>
+          <div className="panel-title">PROJECT</div>
         </div>
         <div style={{ display: 'flex', gap: '2px' }}>
-          {/* Upload Folder Button */}
-          <label className="icon-btn" title="Upload Folder" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <label className="icon-btn" title="Upload Folder" style={{ cursor: 'pointer' }}>
             <input type="file" webkitdirectory="" directory="" multiple onChange={handleFileUpload} style={{ display: 'none' }} />
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z" /></svg>
           </label>
-          {/* Upload File Button */}
-          <label className="icon-btn" title="Upload Files" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <label className="icon-btn" title="Upload Files" style={{ cursor: 'pointer' }}>
             <input type="file" multiple onChange={handleFileUpload} style={{ display: 'none' }} />
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z" /></svg>
           </label>
@@ -91,41 +94,58 @@ export default function FileExplorer({ isVisible, toggleVisibility }) {
           </button>
         </div>
       </div>
-      <div className="file-tree" style={{ padding: '8px 4px' }}>
+
+      <div className="file-tree">
+        {/* Mock root folder to match design */}
+        <div className="file-item" style={{ paddingLeft: '16px' }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ opacity: 0.8, color: 'var(--brand-color)' }}>
+            <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+          </svg>
+          <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>src</span>
+        </div>
+
         {files.map(f => (
           <div
             key={f.id}
             className={`file-item ${f.id === activeFileId ? 'active' : ''}`}
             onClick={() => setActiveFileId(f.id)}
-            style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px' }}
           >
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', overflow: 'hidden' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ opacity: 0.7, flexShrink: 0 }}>
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 7V4.5L18.5 9H13z" />
-              </svg>
-              <span style={{ textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden', fontSize: '13px' }}>
-                {f.name}
-              </span>
-            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ opacity: f.id === activeFileId ? 1 : 0.7, color: f.id === activeFileId ? 'var(--brand-color)' : 'currentColor' }}>
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 7V4.5L18.5 9H13z" />
+            </svg>
+            <span style={{ textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+              {f.name}
+            </span>
 
-            <button
-              className="icon-btn delete-btn"
-              onClick={(e) => deleteFile(e, f.id)}
-              title="Delete File"
-              style={{ width: '20px', height: '20px', opacity: f.id === activeFileId ? 1 : 0.5 }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-              </svg>
-            </button>
+            <div className="file-item-actions">
+              <button
+                className="icon-btn"
+                onClick={(e) => deleteFile(e, f.id)}
+                title="Delete File"
+                style={{ width: '20px', height: '20px' }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                </svg>
+              </button>
+            </div>
           </div>
         ))}
         {files.length === 0 && (
           <div style={{ color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center', marginTop: '20px' }}>
-            No files in project.
+            No files in src folder.
           </div>
         )}
       </div>
-    </aside>
+
+      <div style={{ marginTop: 'auto', padding: '16px' }}>
+        <button className="icon-btn" style={{ justifyContent: 'flex-start', width: '100%', gap: '10px', fontSize: '12px', padding: '8px' }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19.43 12.98c.04-.32.07-.64.07-.98 0-.34-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98 0 .33.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/>
+          </svg>
+          Settings
+        </button>
+      </div>
+    </>
   );
 }
