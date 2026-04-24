@@ -1,5 +1,8 @@
-import { createContext, useState, useContext, useRef, useCallback } from 'react';
+import { createContext, useState, useContext, useRef, useCallback, useEffect } from 'react';
 import { executeCode } from '../api/execute';
+import * as Y from 'yjs';
+import { WebsocketProvider } from 'y-websocket';
+import { YJS_WS_URL } from '../socket/socket';
 
 const RoomContext = createContext();
 
@@ -16,10 +19,11 @@ export const getLanguage = (filename) => {
 };
 
 export const RoomProvider = ({ children }) => {
-  const [files, setFiles] = useState([
-    { id: '1', name: 'main.py', content: 'print("Hello Python!")\n' },
-    { id: '2', name: 'index.js', content: 'console.log("Hello JS");\n' }
-  ]);
+  // Yjs setup
+  const [ydoc] = useState(() => new Y.Doc());
+  const [wsProvider, setWsProvider] = useState(null);
+
+  const [files, setFiles] = useState([]);
   const [activeFileId, setActiveFileId] = useState('1');
   const [isTeachingMode, setIsTeachingMode] = useState(false);
 
@@ -65,7 +69,42 @@ export const RoomProvider = ({ children }) => {
     setRoomId(id);
   }, []);
 
-  // Fix: runCode uses refs so it always has the latest file content — no stale closures.
+  // Setup Yjs Provider
+  useEffect(() => {
+    if (!roomId) return;
+    
+    const provider = new WebsocketProvider(YJS_WS_URL, roomId, ydoc);
+    setWsProvider(provider);
+
+    const yFiles = ydoc.getArray('files');
+    const updateFilesState = () => {
+      setFilesAndRef(yFiles.toArray());
+    };
+
+    yFiles.observe(updateFilesState);
+    
+    // Initialize default files if empty on sync
+    provider.on('synced', () => {
+      if (yFiles.length === 0) {
+        ydoc.transact(() => {
+          yFiles.insert(0, [
+            { id: '1', name: 'main.py' },
+            { id: '2', name: 'index.js' }
+          ]);
+          ydoc.getText('1').insert(0, 'print("Hello Python!")\n');
+          ydoc.getText('2').insert(0, 'console.log("Hello JS");\n');
+        });
+      }
+      updateFilesState();
+    });
+
+    return () => {
+      yFiles.unobserve(updateFilesState);
+      provider.destroy();
+      setWsProvider(null);
+    };
+  }, [roomId, ydoc, setFilesAndRef]);
+
   const runCode = useCallback(async () => {
     const activeFile = filesRef.current.find(f => f.id === activeFileIdRef.current);
     if (!activeFile) return;
@@ -75,8 +114,9 @@ export const RoomProvider = ({ children }) => {
     setIsError(false);
 
     try {
+      const content = ydoc.getText(activeFileIdRef.current).toString();
       const res = await executeCode(
-        activeFile.content,
+        content,
         getLanguage(activeFile.name),
         roomIdRef.current,
         userIdRef.current
@@ -110,6 +150,8 @@ export const RoomProvider = ({ children }) => {
       setRoomId: setRoomIdAndRef,
       output, isError, isRunning, runCode,
       getLanguage,
+      ydoc,
+      wsProvider
     }}>
       {children}
     </RoomContext.Provider>

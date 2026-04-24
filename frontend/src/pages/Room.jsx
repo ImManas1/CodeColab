@@ -13,7 +13,7 @@ import UserList from "../components/UserList";
 export default function Room() {
   const { roomId: roomIdParam } = useParams();
   const navigate = useNavigate();
-  const { userId, setRoomId, setIsHost, setFiles } = useRoom();
+  const { userId, setRoomId, setIsHost } = useRoom();
 
   const [isExplorerOpen, setIsExplorerOpen] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -64,17 +64,16 @@ export default function Room() {
     socket.on("disconnect", () => setConnectionStatus("disconnected"));
     socket.on("connect_error", () => setConnectionStatus("error"));
 
-    const handleRoomState = ({ hostId, files }) => {
+    const handleRoomState = ({ hostId }) => {
       setIsHost(hostId === userId);
-      if (files) setFiles(files);
     };
 
     const handleHostChanged = ({ hostId }) => {
       setIsHost(hostId === userId);
     };
 
-    const handleFilesUpdate = ({ files }) => {
-      if (files) setFiles(files);
+    const handleFilesUpdate = () => {
+      // Handled by Yjs now
     };
 
     socket.on("room_state", handleRoomState);

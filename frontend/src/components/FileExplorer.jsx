@@ -1,33 +1,37 @@
 import { useRoom } from '../context/RoomContext';
-import { socket } from '../socket/socket';
 
 export default function FileExplorer({ isVisible, toggleVisibility }) {
-  const { files, setFiles, activeFileId, setActiveFileId } = useRoom();
+  const { files, activeFileId, setActiveFileId, ydoc } = useRoom();
 
   const addNewFile = () => {
     const name = prompt("Enter new file name (e.g., script.py):");
-    if (name) {
-      const newFile = { id: Date.now().toString(), name, content: "" };
-      const newFiles = [...files, newFile];
-      setFiles(newFiles);
+    if (name && ydoc) {
+      const newFile = { id: Date.now().toString(), name };
+      ydoc.transact(() => {
+        ydoc.getArray('files').push([newFile]);
+        ydoc.getText(newFile.id).insert(0, "");
+      });
       setActiveFileId(newFile.id);
-      socket.emit("sync_files", { files: newFiles });
     }
   };
 
   const deleteFile = (e, id) => {
     e.stopPropagation(); // Prevent setting as active file
-    if (confirm("Are you sure you want to delete this file?")) {
-      const newFiles = files.filter(f => f.id !== id);
-      setFiles(newFiles);
+    if (confirm("Are you sure you want to delete this file?") && ydoc) {
+      const fileArray = ydoc.getArray('files');
+      const idx = fileArray.toArray().findIndex(f => f.id === id);
+      if (idx !== -1) {
+        fileArray.delete(idx, 1);
+      }
+      const newFiles = fileArray.toArray();
       if (activeFileId === id) {
         setActiveFileId(newFiles.length > 0 ? newFiles[0].id : null);
       }
-      socket.emit("sync_files", { files: newFiles });
     }
   };
 
   const handleFileUpload = async (e) => {
+    if (!ydoc) return;
     const uploadedFiles = Array.from(e.target.files);
 
     const readFile = (file) => new Promise((resolve) => {
@@ -41,25 +45,17 @@ export default function FileExplorer({ isVisible, toggleVisibility }) {
 
     const parsedFiles = await Promise.all(uploadedFiles.map(readFile));
 
-    setFiles(prev => {
-      let newFiles = [...prev];
-      let added = false;
+    ydoc.transact(() => {
+      const fileArray = ydoc.getArray('files');
+      const currentFiles = fileArray.toArray();
 
       parsedFiles.forEach(pf => {
-        if (!newFiles.find(f => f.name === pf.name)) {
-          newFiles.push({
-            id: (Date.now() + Math.random()).toString(),
-            name: pf.name,
-            content: pf.content
-          });
-          added = true;
+        if (!currentFiles.find(f => f.name === pf.name)) {
+          const newId = (Date.now() + Math.random()).toString();
+          fileArray.push([{ id: newId, name: pf.name }]);
+          ydoc.getText(newId).insert(0, pf.content);
         }
       });
-
-      if (added) {
-        socket.emit("sync_files", { files: newFiles });
-      }
-      return added ? newFiles : prev;
     });
 
     e.target.value = null;

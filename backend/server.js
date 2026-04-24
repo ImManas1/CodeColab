@@ -2,6 +2,8 @@ const express = require("express");
 const http = require("http");
 const cors = require("cors");
 const { Server } = require("socket.io");
+const WebSocket = require('ws');
+const setupWSConnection = require('y-websocket/bin/utils').setupWSConnection;
 
 // Fix #10/#11: Load .env so PORT and future config work
 require("dotenv").config();
@@ -69,14 +71,8 @@ io.on("connection", (socket) => {
 
     const room = getOrCreateRoom(roomId);
 
-    // On reconnect the client gets a new socket.id, so remove the stale entry
-    // for this userId (if any) to prevent ghost duplicates in the user list.
-    for (const [sid, user] of room.users.entries()) {
-      if (user.userId === userId && sid !== socket.id) {
-        room.users.delete(sid);
-        console.log(`[Room] Removed stale entry for ${userId} (socket ${sid})`);
-      }
-    }
+    // We allow multiple connections from the same user (e.g., multiple tabs).
+    // Socket.io's disconnect event will handle cleanup of stale sockets.
 
     // First person to join (or rejoin an empty room) becomes the host
     if (room.users.size === 0) {
@@ -137,6 +133,20 @@ io.on("connection", (socket) => {
     });
   });
 
+  // ── CODE OPS (operation-based sync — preserves remote cursors) ──────────────
+  socket.on("code_ops", ({ userId, fileId, ops, content }) => {
+    if (!socket.roomId) return;
+    const room = rooms[socket.roomId];
+    if (!room) return;
+
+    // Persist latest full content to server state
+    const file = room.files.find(f => String(f.id) === String(fileId));
+    if (file && content !== undefined) file.content = content;
+
+    // Relay OPS (not full content) so receivers can apply without cursor jump
+    socket.to(socket.roomId).emit("code_ops_update", { userId, fileId, ops });
+  });
+
   // ── CHAT ──────────────────────────────────────────────────────────────────
   // Fix #3: Use io.to() so the sender also sees their own message in the log
   // (frontend does NOT optimistically add the message, so this is correct)
@@ -162,6 +172,13 @@ io.on("connection", (socket) => {
 
     io.to(roomId).emit("host_changed", { hostId: userId });
     io.to(roomId).emit("user_list_update", getRoomUserList(roomId));
+  });
+
+  // ── CURSOR SYNC ───────────────────────────────────────────────────────────
+  socket.on("cursor_move", ({ userId, fileId, line, column }) => {
+    if (!socket.roomId) return;
+    // Relay cursor position to all OTHER users in the room
+    socket.to(socket.roomId).emit("cursor_update", { userId, fileId, line, column });
   });
 
   // ── LEAVE ROOM (manual) ───────────────────────────────────────────────────
@@ -209,8 +226,28 @@ function handleLeave(socket, roomId, userId) {
   io.to(roomId).emit("user_list_update", getRoomUserList(roomId));
 }
 
-// Fix #10: Read PORT from .env
 const PORT = process.env.PORT || 5000;
+
+// Set up raw WebSocket server for Yjs
+const wss = new WebSocket.Server({ noServer: true });
+
+wss.on('connection', (ws, req) => {
+  const urlParts = req.url.split('/');
+  const docName = urlParts[urlParts.length - 1] || 'default';
+  console.log(`[Yjs] Connection established for document: ${docName}`);
+  
+  setupWSConnection(ws, req, { docName });
+});
+
+server.on('upgrade', (request, socket, head) => {
+  // Route /yjs connections to the raw WebSocket server for Yjs
+  if (request.url.startsWith('/yjs')) {
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit('connection', ws, request);
+    });
+  }
+  // Socket.io automatically handles other upgrades
+});
 
 server.listen(PORT, () => {
   console.log(`[Server] Running on port ${PORT}`);

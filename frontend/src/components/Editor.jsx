@@ -1,95 +1,84 @@
 import MonacoEditor from "@monaco-editor/react";
 import { useRoom } from "../context/RoomContext";
-import { socket } from "../socket/socket";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import { MonacoBinding } from 'y-monaco';
 
 export default function Editor({ theme = 'dark' }) {
   const {
     files,
-    setFiles,
     activeFileId,
     setActiveFileId,
     isTeachingMode,
     isHost,
     userId,
     getLanguage,
+    ydoc,
+    wsProvider
   } = useRoom();
 
-  const [remoteCursors, setRemoteCursors] = useState({});
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
+  const [editorInstance, setEditorInstance] = useState(null);
+  const bindingRef = useRef(null);
 
   const activeFile = files.find(f => f.id === activeFileId);
   const lang = activeFile ? getLanguage(activeFile.name) : "plaintext";
 
-  const addNewFile = () => {
-    const name = prompt("Enter new file name (e.g., script.py):");
-    if (name) {
-      const newFile = { id: Date.now().toString(), name, content: "" };
-      const newFiles = [...files, newFile];
-      setFiles(newFiles);
-      setActiveFileId(newFile.id);
-      socket.emit("sync_files", { files: newFiles });
-    }
-  };
-
   const closeFile = () => {
     if (!activeFile) return;
     if (confirm(`Are you sure you want to delete ${activeFile.name}?`)) {
-      const newFiles = files.filter(f => f.id !== activeFileId);
-      setFiles(newFiles);
+      const fileArray = ydoc.getArray('files');
+      const idx = fileArray.toArray().findIndex(f => f.id === activeFileId);
+      if (idx !== -1) {
+        fileArray.delete(idx, 1);
+      }
+      const newFiles = fileArray.toArray();
       setActiveFileId(newFiles.length > 0 ? newFiles[0].id : null);
-      socket.emit("sync_files", { files: newFiles });
     }
   };
 
-  const handleEditorChange = (value) => {
-    const updatedContent = value || "";
-
-    setFiles(prev =>
-      prev.map(f =>
-        String(f.id) === String(activeFileId)
-          ? { ...f, content: updatedContent }
-          : f
-      )
-    );
-
-    socket.emit("code_change", {
-      userId,
-      fileId: String(activeFileId),
-      code: updatedContent,
-    });
-  };
-
   const handleEditorDidMount = (editor, monaco) => {
+    setEditorInstance(editor);
+    
+    if (wsProvider && wsProvider.awareness) {
+      // Pick a deterministic color based on userId
+      const colors = ['#f87171', '#fb923c', '#fbbf24', '#a3e635', '#4ade80', '#2dd4bf', '#38bdf8', '#818cf8', '#a78bfa', '#e879f9', '#f43f5e'];
+      const colorIndex = userId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
+      
+      wsProvider.awareness.setLocalStateField('user', {
+        name: userId,
+        color: colors[colorIndex]
+      });
+    }
+
     editor.onDidChangeCursorPosition((e) => {
       setCursorPos({ line: e.position.lineNumber, col: e.position.column });
     });
   };
 
   useEffect(() => {
-    const handleIncomingCode = ({ fileId, code, userId: senderId }) => {
-      setFiles(prev =>
-        prev.map(f => {
-          if (String(f.id) !== String(fileId)) return f;
-          if (f.content === code) return f;
-          return { ...f, content: code };
-        })
-      );
-      
-      // Flash a pseudo-cursor badge (basic implementation for UI effect)
-      setRemoteCursors(prev => ({ ...prev, [senderId]: true }));
-      setTimeout(() => {
-        setRemoteCursors(prev => {
-          const next = { ...prev };
-          delete next[senderId];
-          return next;
-        });
-      }, 2000);
-    };
+    if (!editorInstance || !activeFileId || !ydoc || !wsProvider) return;
 
-    socket.on("code_update", handleIncomingCode);
-    return () => socket.off("code_update", handleIncomingCode);
-  }, [setFiles]);
+    if (bindingRef.current) {
+      bindingRef.current.destroy();
+      bindingRef.current = null;
+    }
+
+    const ytext = ydoc.getText(activeFileId);
+    
+    bindingRef.current = new MonacoBinding(
+      ytext, 
+      editorInstance.getModel(), 
+      new Set([editorInstance]), 
+      wsProvider.awareness
+    );
+
+    return () => {
+      if (bindingRef.current) {
+        bindingRef.current.destroy();
+        bindingRef.current = null;
+      }
+    };
+  }, [editorInstance, activeFileId, ydoc, wsProvider]);
 
   return (
     <>
@@ -109,8 +98,7 @@ export default function Editor({ theme = 'dark' }) {
         <MonacoEditor
           height="100%"
           language={lang}
-          value={activeFile?.content || ""}
-          onChange={handleEditorChange}
+          // Note: value is omitted because y-monaco handles the model value
           onMount={handleEditorDidMount}
           theme={theme === 'light' ? 'vs' : 'vs-dark'}
           options={{
@@ -126,16 +114,7 @@ export default function Editor({ theme = 'dark' }) {
             renderLineHighlight: "all",
           }}
         />
-        
-        {/* Mock remote cursors for UI effect */}
-        {Object.keys(remoteCursors).map((senderId, i) => (
-          <div key={senderId} className="user-cursor-badge" style={{ top: `${40 + i * 30}px`, right: '40px' }}>
-            <div style={{ width: '14px', height: '14px', borderRadius: '50%', background: '#333', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px' }}>
-              {senderId.charAt(0).toUpperCase()}
-            </div>
-            {senderId}
-          </div>
-        ))}
+        {/* y-monaco provides native awareness cursors automatically via CSS */}
       </div>
 
       <div className="status-bar">
@@ -156,7 +135,7 @@ export default function Editor({ theme = 'dark' }) {
         <div className="status-right">
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--success)' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
             </svg>
             All changes saved
           </div>
