@@ -14,6 +14,9 @@ export default function Home() {
   const { setUserId } = useRoom();
 
   useEffect(() => {
+    // Ensure homepage is always in dark theme, even if user left a light-theme room
+    document.body.classList.remove('theme-light');
+
     // If redirected here via direct link without a Developer ID, prefill the room code
     const queryParams = new URLSearchParams(location.search);
     const roomParam = queryParams.get("room");
